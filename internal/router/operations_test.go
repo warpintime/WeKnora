@@ -44,7 +44,9 @@ func registerOperationAreas(v1 *gin.RouterGroup, g *rbacGuards) {
 		&handler.WebSearchProviderCredentialsHandler{},
 		g,
 	)
-	RegisterDataSourceRoutes(v1, &handler.DataSourceHandler{}, &handler.DataSourceCredentialsHandler{}, g)
+	RegisterDataSourceRoutes(
+		v1, &handler.DataSourceHandler{}, &handler.DataSourceCredentialsHandler{}, &handler.DataSourceOAuthHandler{}, g,
+	)
 	RegisterAutomationRoutes(v1, &handler.AutomationHandler{}, g)
 }
 

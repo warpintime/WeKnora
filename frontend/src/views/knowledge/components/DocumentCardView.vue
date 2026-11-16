@@ -164,6 +164,7 @@ const channelLabelMap: Record<string, string> = {
   gitlab: 'knowledgeBase.channelGitLab',
   seafile: 'knowledgeBase.channelSeafile',
   nextcloud: 'knowledgeBase.channelNextcloud',
+  google_drive: 'knowledgeBase.channelGoogleDrive',
   confluence: 'knowledgeBase.channelConfluence',
   dingtalk: 'knowledgeBase.channelDingtalk',
   slack: 'knowledgeBase.channelSlack',

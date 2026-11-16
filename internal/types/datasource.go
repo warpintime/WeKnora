@@ -277,6 +277,15 @@ func (d *DataSourceConfig) StripNonSecretCredentials(connectorType string) {
 	}
 }
 
+// DataSourceOAuthStatus reports whether a data source whose connector uses a
+// browser authorization flow has been authorized. It never carries a secret.
+type DataSourceOAuthStatus struct {
+	// Authorized is true once the connector holds a long-lived grant.
+	Authorized bool `json:"authorized"`
+	// Account identifies the authorized external account (e.g. an email).
+	Account string `json:"account,omitempty"`
+}
+
 // Resource represents a syncable resource (document, folder, space) from external system
 type Resource struct {
 	// Unique identifier in the external system

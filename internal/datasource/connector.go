@@ -252,7 +252,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Description:  "Sync documents and files from Google Drive",
 		Priority:     5,
 		AuthType:     "oauth2",
-		Capabilities: []string{"incremental"},
+		Capabilities: []string{"incremental", "hierarchical", "deletion_sync"},
 	},
 	types.ConnectorTypeOneDrive: {
 		Type:         types.ConnectorTypeOneDrive,

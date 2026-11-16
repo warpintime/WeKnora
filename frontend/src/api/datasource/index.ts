@@ -175,3 +175,55 @@ export async function putDataSourceCredentials(
 export async function deleteDataSourceCredentials(id: string): Promise<void> {
   await del(`/api/v1/datasource/${id}/credentials/credentials`)
 }
+
+// ---------------------------------------------------------------------------
+// Browser authorization for OAuth connectors (e.g. Google Drive).
+//
+// The data source stores the OAuth client the user registered; the provider
+// then redirects the browser to a public backend callback, which stores the
+// grant next to those credentials.
+// ---------------------------------------------------------------------------
+
+// Path of the public backend callback. It is what the user registers as the
+// redirect URI of their OAuth client.
+export const DATASOURCE_OAUTH_CALLBACK_PATH = '/api/v1/datasource-oauth/callback'
+
+export interface DataSourceOAuthAuthorization {
+  authorizationUrl: string
+  authorizationAttempt: string
+}
+
+export interface DataSourceOAuthStatus {
+  authorized: boolean
+  account?: string
+}
+
+export async function getDataSourceOAuthAuthorizeURL(
+  id: string,
+  body: { redirect_uri: string; frontend_redirect?: string },
+): Promise<DataSourceOAuthAuthorization> {
+  const response: any = await post(`/api/v1/datasource/${id}/oauth/authorize-url`, body)
+  const data = response.data ?? response
+  return {
+    authorizationUrl: data?.authorization_url ?? '',
+    authorizationAttempt: data?.authorization_attempt ?? '',
+  }
+}
+
+// With an attempt id the answer covers that authorization only, so a grant
+// stored earlier is never mistaken for the consent the user is giving now.
+export async function getDataSourceOAuthStatus(
+  id: string,
+  authorizationAttempt?: string,
+): Promise<DataSourceOAuthStatus> {
+  const query = authorizationAttempt
+    ? `?authorization_attempt=${encodeURIComponent(authorizationAttempt)}`
+    : ''
+  const response: any = await get(`/api/v1/datasource/${id}/oauth/status${query}`)
+  const data = response.data ?? response
+  return { authorized: Boolean(data?.authorized), account: data?.account || undefined }
+}
+
+export async function revokeDataSourceOAuth(id: string): Promise<void> {
+  await del(`/api/v1/datasource/${id}/oauth/token`)
+}

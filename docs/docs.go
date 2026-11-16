@@ -3963,6 +3963,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/datasource-oauth/callback": {
+            "get": {
+                "description": "接收授权服务器回调并完成 code 交换，随后重定向回前端",
+                "tags": [
+                    "数据源"
+                ],
+                "summary": "数据源 OAuth 回调",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "授权码",
+                        "name": "code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态参数",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "授权错误码",
+                        "name": "error",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Found"
+                    }
+                }
+            }
+        },
         "/datasource/logs/{log_id}": {
             "get": {
                 "description": "Retrieve a specific sync log entry",
@@ -4389,6 +4423,170 @@ const docTemplate = `{
                     "risk": "read"
                 },
                 "x-agent-hint": "Read recent sync status and counts. Use limit and offset for older records. Raw upstream errors are omitted; detailed failures remain on the data source settings page."
+            }
+        },
+        "/datasource/{id}/oauth/authorize-url": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "为使用浏览器授权流程的数据源（如 Google Drive）生成授权地址。数据源需已保存 OAuth 客户端凭据",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据源"
+                ],
+                "summary": "发起数据源 OAuth 授权",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "数据源 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "{redirect_uri: string, frontend_redirect?: string}",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "{authorization_url: string, authorization_attempt: string}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/datasource/{id}/oauth/status": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "返回数据源是否已授权及授权账号；传 authorization_attempt 时只检查本次授权流程是否完成",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "数据源"
+                ],
+                "summary": "查询数据源 OAuth 授权状态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "数据源 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "本次授权尝试 ID；传入后不会接受历史授权",
+                        "name": "authorization_attempt",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/internal_handler.DataResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DataSourceOAuthStatus"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/datasource/{id}/oauth/token": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "删除授权流程写入的令牌并通知授权服务器失效；用户填写的客户端凭据保留",
+                "tags": [
+                    "数据源"
+                ],
+                "summary": "撤销数据源 OAuth 授权",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "数据源 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
             }
         },
         "/datasource/{id}/pause": {
@@ -29728,6 +29926,19 @@ const docTemplate = `{
                 "updated_at": {
                     "description": "Last update timestamp",
                     "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DataSourceOAuthStatus": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "description": "Account identifies the authorized external account (e.g. an email).",
+                    "type": "string"
+                },
+                "authorized": {
+                    "description": "Authorized is true once the connector holds a long-lived grant.",
+                    "type": "boolean"
                 }
             }
         },

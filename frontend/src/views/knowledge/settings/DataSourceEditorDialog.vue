@@ -13,7 +13,12 @@ import {
   deleteDataSource,
   putDataSourceCredentials,
   deleteDataSourceCredentials,
+  getDataSourceOAuthAuthorizeURL,
+  getDataSourceOAuthStatus,
+  revokeDataSourceOAuth,
+  DATASOURCE_OAUTH_CALLBACK_PATH,
   type DataSource,
+  type DataSourceOAuthStatus,
   type Resource,
 } from '@/api/datasource'
 import SettingDrawer from '@/components/settings/SettingDrawer.vue'
@@ -91,6 +96,7 @@ async function confirmRemoveCredentials() {
     replaceCredentialsMode.value = false
     pendingRemoveCredentials.value = false
     form.value.config.credentials = {}
+    oauthStatus.value = { authorized: false }
     MessagePlugin.success(t('credential.removedToast'))
   } catch (e: any) {
     MessagePlugin.error(e?.message || t('credential.removeFailed'))
@@ -593,6 +599,9 @@ interface ConnectorDef {
     multiline?: boolean
     fieldType?: 'custom_headers'
   }[]
+  // The connector signs in at the provider: the fields hold the OAuth client,
+  // and a "Connect" step replaces the connection test.
+  oauth?: boolean
 }
 
 const connectorDefs = computed<ConnectorDef[]>(() => [
@@ -782,10 +791,127 @@ const connectorDefs = computed<ConnectorDef[]>(() => [
       { key: 'app_password', labelKey: 'datasource.nextcloud.appPassword', placeholder: '', secret: true, hintKey: 'datasource.nextcloud.appPasswordHint' },
     ],
   },
+  {
+    type: 'google_drive', available: true, oauth: true,
+    docUrl: 'https://console.cloud.google.com/apis/credentials',
+    permissionDocUrl: '', permissionPageUrl: '', requiredPermissions: [],
+    fields: [
+      { key: 'client_id', labelKey: 'datasource.googleDrive.clientId', placeholder: 'xxxxxxxx.apps.googleusercontent.com' },
+      { key: 'client_secret', labelKey: 'datasource.googleDrive.clientSecret', placeholder: '', secret: true, hintKey: 'datasource.googleDrive.clientHint' },
+    ],
+  },
 ])
 
 
 const currentDef = computed(() => connectorDefs.value.find(d => d.type === form.value.type))
+
+// --- OAuth connectors (e.g. Google Drive) ---
+//
+// The credential fields hold the OAuth client the user registered. The grant
+// itself is obtained by sending the browser to the provider, which redirects
+// to a public backend callback; the backend stores the grant on the data
+// source. The row therefore has to exist before the user can connect.
+const isOAuthConnector = computed(() => currentDef.value?.oauth === true)
+const oauthStatus = ref<DataSourceOAuthStatus>({ authorized: false })
+const oauthAuthorizing = ref(false)
+const oauthRevoking = ref(false)
+const oauthRedirectUri = computed(() => window.location.origin + DATASOURCE_OAUTH_CALLBACK_PATH)
+let oauthGeneration = 0
+let oauthPollTimer: number | null = null
+
+// The drawer is reused; this also invalidates requests already in flight.
+function cancelOAuthRequests() {
+  oauthGeneration++
+  if (oauthPollTimer !== null) window.clearInterval(oauthPollTimer)
+  oauthPollTimer = null
+  oauthAuthorizing.value = false
+}
+
+async function refreshOAuthStatus(dsId: string) {
+  const generation = oauthGeneration
+  try {
+    const status = await getDataSourceOAuthStatus(dsId)
+    if (generation === oauthGeneration) oauthStatus.value = status
+  } catch {
+    // Unknown is treated as not connected; connecting again is always safe.
+  }
+}
+
+async function connectOAuth() {
+  if (oauthAuthorizing.value || !validateStep1Fields()) return
+  cancelOAuthRequests()
+  const generation = oauthGeneration
+  oauthAuthorizing.value = true
+  try {
+    const hadDataSource = !!tempDsId.value
+    const dsId = await ensureTempDataSource()
+    if (!dsId || generation !== oauthGeneration) {
+      if (generation === oauthGeneration) oauthAuthorizing.value = false
+      return
+    }
+    // A row created just now already carries the typed client. An existing
+    // one does not learn about edits through the main update (it never
+    // carries credentials), so they are written explicitly. That replaces the
+    // credential set, grant included, which the authorization then renews.
+    if (hadDataSource && needsConnectionTest()) {
+      await putDataSourceCredentials(dsId, { ...form.value.config.credentials })
+      oauthStatus.value = { authorized: false }
+      if (isEdit.value) {
+        credentialsConfigured.value = true
+        replaceCredentialsMode.value = false
+        form.value.config.credentials = {}
+      }
+    }
+    const authorization = await getDataSourceOAuthAuthorizeURL(dsId, {
+      redirect_uri: oauthRedirectUri.value,
+      // The popup lands on the app root once the backend has stored the
+      // grant; it is closed below as soon as the status flips.
+      frontend_redirect: '/',
+    })
+    if (generation !== oauthGeneration) return
+    if (!authorization.authorizationUrl || !authorization.authorizationAttempt) {
+      throw new Error(t('datasource.oauth.authorizeFailed'))
+    }
+    const popup = window.open(authorization.authorizationUrl, 'datasource_oauth', 'width=600,height=720')
+    if (!popup) throw new Error(t('datasource.oauth.popupBlocked'))
+    oauthPollTimer = window.setInterval(async () => {
+      if (generation !== oauthGeneration) return
+      const closed = popup.closed
+      let status: DataSourceOAuthStatus | undefined
+      try {
+        status = await getDataSourceOAuthStatus(dsId, authorization.authorizationAttempt)
+      } catch { /* keep polling */ }
+      if (generation !== oauthGeneration) return
+      if (status?.authorized || closed) {
+        cancelOAuthRequests()
+        if (status?.authorized) {
+          try { popup.close() } catch { /* cross-origin close may throw */ }
+          oauthStatus.value = status
+          MessagePlugin.success(t('datasource.oauth.connected'))
+        }
+      }
+    }, 1500)
+  } catch (e: any) {
+    if (generation !== oauthGeneration) return
+    oauthAuthorizing.value = false
+    MessagePlugin.error(e?.message || e?.error || t('datasource.oauth.authorizeFailed'))
+  }
+}
+
+async function disconnectOAuth() {
+  if (!tempDsId.value || oauthRevoking.value) return
+  cancelOAuthRequests()
+  oauthRevoking.value = true
+  try {
+    await revokeDataSourceOAuth(tempDsId.value)
+    oauthStatus.value = { authorized: false }
+    MessagePlugin.success(t('datasource.oauth.disconnected'))
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || e?.error || t('datasource.saveFailed'))
+  } finally {
+    oauthRevoking.value = false
+  }
+}
 
 const displayedCredentialFields = computed(() => {
   const fields = currentDef.value?.fields || []
@@ -821,6 +947,8 @@ watch(visible, async (v) => {
   // A create from the session that was just left is not something a session
   // starting now may join, so the shared slot is emptied on both edges.
   tempDsPromise = null
+  cancelOAuthRequests()
+  oauthStatus.value = { authorized: false }
   if (!v) {
     if (!isEdit.value && tempDsId.value) {
       try {
@@ -895,6 +1023,7 @@ watch(visible, async (v) => {
       }
     }
     tempDsId.value = props.dataSource.id
+    if (isOAuthConnector.value) void refreshOAuthStatus(props.dataSource.id)
   } else {
     replaceCredentialsMode.value = false
     credentialsConfigured.value = false
@@ -916,6 +1045,9 @@ watch(
     if (needsConnectionTest()) {
       testResult.value = ''
       testErrorMsg.value = ''
+      if (isOAuthConnector.value && !isEdit.value && oauthStatus.value.authorized) {
+        oauthStatus.value = { authorized: false }
+      }
     }
   },
   { deep: true },
@@ -1294,7 +1426,14 @@ function validateStep1Fields(): boolean {
 async function nextStep() {
   if (step.value === 1) {
     if (!validateStep1Fields()) return
-    if (needsConnectionTest() && testResult.value !== 'success') {
+    if (isOAuthConnector.value) {
+      // Typed-but-unconnected client values would replace the stored set on
+      // save and silently drop the grant, so replacing requires reconnecting.
+      if (!oauthStatus.value.authorized || (isEdit.value && replaceCredentialsMode.value)) {
+        MessagePlugin.warning(t('datasource.oauth.connectRequired'))
+        return
+      }
+    } else if (needsConnectionTest() && testResult.value !== 'success') {
       await testConnection()
       if ((testResult.value as string) !== 'success') return
     }
@@ -1322,6 +1461,10 @@ async function nextStep() {
   }
   if (step.value === 2 && form.value.type === 'nextcloud' && selectedResourceIds.value.length === 0) {
     MessagePlugin.warning(t('datasource.nextcloud.selectionRequired'))
+    return
+  }
+  if (step.value === 2 && form.value.type === 'google_drive' && selectedResourceIds.value.length === 0) {
+    MessagePlugin.warning(t('datasource.googleDrive.selectionRequired'))
     return
   }
   step.value++
@@ -1566,7 +1709,7 @@ const drawerConfirmText = computed(() => {
       <t-button v-if="!isEdit" variant="outline" @click="step = 0">
         {{ t('datasource.back') }}
       </t-button>
-      <t-button variant="outline" :loading="testing" @click="testConnection">
+      <t-button v-if="!isOAuthConnector" variant="outline" :loading="testing" @click="testConnection">
         <template #icon>
           <t-icon
             v-if="!testing && testResult === 'success'"
@@ -1582,7 +1725,7 @@ const drawerConfirmText = computed(() => {
         {{ testing ? t('model.editor.testing') : t('datasource.testConnection') }}
       </t-button>
       <span
-        v-if="testResult"
+        v-if="testResult && !isOAuthConnector"
         :class="['footer-test-message', testResult === 'success' ? 'success' : 'error']"
         :title="testResult === 'error' ? testErrorMsg : t('datasource.connected')"
       >
@@ -1880,6 +2023,35 @@ const drawerConfirmText = computed(() => {
           <div v-if="isEdit && replaceCredentialsMode" class="credential-edit-actions">
             <t-button size="small" variant="text" @click="cancelReplaceCredentials">
               {{ t('common.cancel') }}
+            </t-button>
+          </div>
+        </template>
+
+        <template v-if="isOAuthConnector">
+          <div class="form-item">
+            <label class="form-label">{{ t('datasource.oauth.redirectUri') }}</label>
+            <t-input :model-value="oauthRedirectUri" readonly />
+            <p class="form-desc">{{ t('datasource.oauth.redirectUriHint') }}</p>
+          </div>
+          <div class="ds-oauth-connect">
+            <t-button theme="primary" variant="outline" :loading="oauthAuthorizing" @click="connectOAuth">
+              {{ oauthStatus.authorized ? t('datasource.oauth.reconnect') : t('datasource.oauth.connect') }}
+            </t-button>
+            <span v-if="oauthStatus.authorized" class="ds-oauth-connect__status">
+              <t-icon name="check-circle-filled" class="status-icon available" />
+              {{ oauthStatus.account
+                ? t('datasource.oauth.connectedAs', { account: oauthStatus.account })
+                : t('datasource.oauth.connected') }}
+            </span>
+            <t-button
+              v-if="oauthStatus.authorized"
+              size="small"
+              variant="text"
+              theme="danger"
+              :loading="oauthRevoking"
+              @click="disconnectOAuth"
+            >
+              {{ t('datasource.oauth.disconnect') }}
             </t-button>
           </div>
         </template>
@@ -2597,6 +2769,23 @@ const drawerConfirmText = computed(() => {
 .credential-edit-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.ds-oauth-connect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.ds-oauth-connect__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--td-text-color-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .credential-edit-actions :deep(.t-button) {

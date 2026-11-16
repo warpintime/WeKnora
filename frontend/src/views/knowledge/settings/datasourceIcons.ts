@@ -9,6 +9,7 @@ import dingtalkIcon from '@/assets/img/im/dingtalk.svg'
 import imaIcon from '@/assets/img/datasource-ima.png'
 import seafileIcon from '@/assets/img/datasource-seafile.png'
 import nextcloudIcon from '@/assets/img/datasource-nextcloud.svg'
+import googleDriveIcon from '@/assets/img/datasource-google-drive.svg'
 
 export const datasourceIconMap: Record<string, string> = {
   feishu: feishuIcon,
@@ -25,6 +26,7 @@ export const datasourceIconMap: Record<string, string> = {
   ima: imaIcon,
   seafile: seafileIcon,
   nextcloud: nextcloudIcon,
+  google_drive: googleDriveIcon,
 }
 
 export function getDatasourceIconUrl(type: string): string | undefined {

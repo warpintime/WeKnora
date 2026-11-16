@@ -983,6 +983,7 @@ const channelLabelMap: Record<string, string> = {
   gitlab: 'knowledgeBase.channelGitLab',
   seafile: 'knowledgeBase.channelSeafile',
   nextcloud: 'knowledgeBase.channelNextcloud',
+  google_drive: 'knowledgeBase.channelGoogleDrive',
   confluence: 'knowledgeBase.channelConfluence',
   // Drive (云盘) connectors get their own channel so Drive docs show
   // "飞书云盘" / "Lark 云盘", distinct from the wiki connector's "飞书".

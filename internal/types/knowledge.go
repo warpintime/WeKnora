@@ -39,6 +39,7 @@ const (
 	ChannelIMA              = "ima"               // Tencent IMA (ima.qq.com)
 	ChannelSeafile          = "seafile"           // Seafile
 	ChannelNextcloud        = "nextcloud"         // Nextcloud
+	ChannelGoogleDrive      = "google_drive"      // Google Drive
 )
 
 // Knowledge parse status constants

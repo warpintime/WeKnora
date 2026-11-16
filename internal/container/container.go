@@ -70,6 +70,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/datasource/connector/feishu/drive"
 	"github.com/Tencent/WeKnora/internal/datasource/connector/feishu/wiki"
 	gitlabConnector "github.com/Tencent/WeKnora/internal/datasource/connector/gitlab"
+	googledriveConnector "github.com/Tencent/WeKnora/internal/datasource/connector/googledrive"
 	imaConnector "github.com/Tencent/WeKnora/internal/datasource/connector/ima"
 	nextcloudConnector "github.com/Tencent/WeKnora/internal/datasource/connector/nextcloud"
 	notionConnector "github.com/Tencent/WeKnora/internal/datasource/connector/notion"
@@ -559,6 +560,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(initConnectorRegistry))
 	must(container.Provide(datasource.NewScheduler))
 	must(container.Provide(service.NewDataSourceService))
+	must(container.Provide(service.NewDataSourceOAuthService))
 	must(container.Invoke(startDataSourceScheduler))
 	logger.Debugf(ctx, "[Container] Data source sync framework registered")
 	must(container.Invoke(startAuditLogRetention))
@@ -780,6 +782,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewModelCredentialsHandler))
 	must(container.Provide(handler.NewWebSearchProviderCredentialsHandler))
 	must(container.Provide(handler.NewDataSourceCredentialsHandler))
+	must(container.Provide(handler.NewDataSourceOAuthHandler))
 	must(container.Provide(handler.NewWebSearchHandler))
 	must(container.Provide(handler.NewWebSearchProviderHandler))
 	must(container.Provide(handler.NewVectorStoreHandler))
@@ -2144,6 +2147,9 @@ func initConnectorRegistry() (*datasource.ConnectorRegistry, error) {
 	}
 	if err := registry.Register(nextcloudConnector.NewConnector()); err != nil {
 		errs = errors.Join(errs, fmt.Errorf("register nextcloud connector: %w", err))
+	}
+	if err := registry.Register(googledriveConnector.NewConnector()); err != nil {
+		errs = errors.Join(errs, fmt.Errorf("register google_drive connector: %w", err))
 	}
 
 	// Future connectors will be registered here:

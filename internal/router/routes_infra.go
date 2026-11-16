@@ -313,8 +313,16 @@ func RegisterDataSourceRoutes(
 	r *gin.RouterGroup,
 	handler *handler.DataSourceHandler,
 	credHandler *handler.DataSourceCredentialsHandler,
+	oauthHandler *handler.DataSourceOAuthHandler,
 	g *rbacGuards,
 ) {
+	// OAuth provider redirect for connectors that sign in at the provider.
+	// Registered outside the /datasource group to avoid a static-vs-":id" route
+	// conflict, and left unauthenticated (allow-listed in middleware/auth.go):
+	// the browser arrives from a third party without a WeKnora bearer, and the
+	// single-use state parameter authenticates the request.
+	r.GET("/datasource-oauth/callback", oauthHandler.Callback)
+
 	// Data source routes
 	ds := g.apiKeyGroup(r.Group("/datasource"), apiKeyManageDataSources(apiKeyFullAccess()))
 	{
@@ -337,6 +345,12 @@ func RegisterDataSourceRoutes(
 		// internal/handler/datasource_credentials.go). — Admin+
 		ds.PUT("/:id/credentials", g.Admin(), credHandler.Put)
 		ds.DELETE("/:id/credentials/:field", g.Admin(), credHandler.DeleteField)
+
+		// Browser authorization for OAuth connectors (e.g. Google Drive). The
+		// resulting grant is a tenant-wide credential of the data source. — Admin+
+		ds.POST("/:id/oauth/authorize-url", g.Admin(), oauthHandler.AuthorizeURL)
+		ds.GET("/:id/oauth/status", g.Admin(), oauthHandler.Status)
+		ds.DELETE("/:id/oauth/token", g.Admin(), oauthHandler.Revoke)
 
 		// Connection and resource management — Admin+
 		ds.POST("/:id/validate", g.Admin(), handler.ValidateConnection)

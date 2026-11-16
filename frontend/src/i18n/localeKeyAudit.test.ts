@@ -321,6 +321,25 @@ test('Seafile picker texts and sync error codes remain localized after pruning',
   }
 })
 
+test('Google Drive configuration, authorization and sync errors are localized and survive pruning', () => {
+  const keys = [
+    'connector.google_drive', 'connectorDesc.google_drive', 'googleDrive.clientId', 'googleDrive.clientSecret',
+    'googleDrive.clientHint', 'googleDrive.selectionRequired',
+    ...['redirectUri', 'redirectUriHint', 'connect', 'reconnect', 'connectedAs', 'connected', 'disconnect',
+      'disconnected', 'connectRequired', 'authorizeFailed', 'popupBlocked'].map(key => `oauth.${key}`),
+    'noResourcesDesc_google_drive', ...[1, 2, 3].map(step => `guideStep${step}_google_drive`),
+    ...['permission_denied', 'not_found', 'file_too_large', 'export_too_large', 'empty_file',
+      'rate_limited', 'fetch_failed'].map(code => `syncError.google_drive_${code}`),
+  ].map(key => `datasource.${key}`)
+  keys.push('knowledgeBase.channelGoogleDrive')
+  for (const key of keys) {
+    assert.ok(referencedKeys.has(key), `pruning would remove ${key}`)
+    for (const [locale, bundle] of Object.entries(LOCALE_BUNDLES)) {
+      assert.equal(typeof getLocaleValueAtPath(bundle, key), 'string', `${locale}: missing ${key}`)
+    }
+  }
+})
+
 test('Nextcloud configuration, picker and sync errors are localized and survive pruning', () => {
   const keys = [
     'connector.nextcloud', 'connectorDesc.nextcloud', 'nextcloud.baseUrl', 'nextcloud.baseUrlHint',
